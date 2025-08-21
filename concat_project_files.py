@@ -4,32 +4,44 @@ import re
 import textwrap
 import time
 
-# Állítsd be a projekted gyökerét itt
-PROJECT_DIR = "S:\\Programozas\\Egyeb\\Munkahely\\kep-sc\\Source\\ClientApp"  # <-- Ezt módosítsd
+################################################################################
+### 1. KONFIGURÁCIÓS SZEKCIÓ                                                 ###
+# Minden, amit módosítanod kell, ezen a területen található.                #
+################################################################################
 
-prefix_to_remove = "S:\\Programozas\\Egyeb\\Munkahely\\"  # <-- Ezt is módosítsd
-remaining_path = PROJECT_DIR.replace(prefix_to_remove, "")
+# --- Alapbeállítások ---
+# Add meg azokat a gyökérkönyvtárakat, amiket a szkriptnek be kell járnia.
+PROJECT_DIRS = [
+    "S:\\Programozas\\Egyeb\\Munkahely\\kep-sc\\Source\\JavaServer",
+    "S:\\Programozas\\Egyeb\\Munkahely\\kep-sc\\Source\\JavaServer\\reporting\\target\\site\\jacoco",
+]
 
-# Ha üresen hagyod ([] vagy None), a szűrés nem aktív, és a szkript a régi módon működik.
-PATH_KEYWORDS = ["error", "exception"]  # <-- MÓDOSÍTSD EZT A LISTÁT A SZŰRÉSHEZ
+# Viszonyítási alap a relatív útvonalakhoz és a kimeneti fájlnévhez.
+# Általában a projektjeidet tartalmazó közös szülőmappa.
+BASE_PATH_FOR_RELPATH = "S:\\Programozas\\Egyeb\\Munkahely\\"
 
-folder_structure = remaining_path.replace("\\", "_").lower()
+# Szűrési kulcsszavak az útvonalakra. Csak azok a fájlok kerülnek be,
+# amelyek teljes útvonala tartalmazza valamelyik kulcsszót.
+# Hagyd üresen ([]) a szűrés kikapcsolásához.
+PATH_KEYWORDS = []  # pl. ["service", "controller"]
 
-# A kimeneti fájl nevének összeállítása, figyelembe véve a kulcsszavakat is.
-filename_parts = [folder_structure]
-if PATH_KEYWORDS:
-    # A kulcsszavakat kisbetűssé alakítjuk és '+' jellel fűzzük össze a jobb olvashatóság érdekében.
-    # A biztonság kedvéért eltávolítunk minden nem alfanumerikus karaktert.
-    sanitized_keywords = [re.sub(r'[\W_]+', '', k).lower() for k in PATH_KEYWORDS if k]
-    if sanitized_keywords:
-        keywords_str = "+".join(sanitized_keywords)
-        filename_parts.append(keywords_str)
+# --- Feldolgozási Opciók ---
+# Itt szabályozhatod, hogy a szkript melyik "karcsúsító" lépést hajtsa végre.
+# Állítsd 'False'-ra, ha egy lépést ki akarsz hagyni.
+# A .html, .xml, .csv fájlokat a szkript automatikusan érintetlenül hagyja.
+PROCESSING_OPTIONS = {
+    "remove_multiline_comments": True,  # Eltávolítja a /* ... */ kommenteket
+    "remove_singleline_comments": True,  # Eltávolítja a // kommenteket (a /// XML doksit nem)
+    "summarize_xml_doc_comments": True,  # A /// kommenteket egy soros összefoglalóvá alakítja
+    "remove_debug_blocks": True,  # Eltávolítja a #if DEBUG ... #endif blokkokat (C#)
+    "remove_namespace_declarations": True,  # Eltávolítja a 'namespace ...' sorokat/blokkokat (C#)
+    "remove_using_statements": True,  # Eltávolítja a 'using ...;' sorokat (C#)
+    "remove_import_statements": True,  # Eltávolítja az 'import ...' sorokat (JS/TS)
+    "collapse_multiple_empty_lines": True,  # Több üres sort egyre cserél
+}
 
-filename_parts.append(time.strftime("%Y%m%d_%H%M%S"))
-
-OUTPUT_FILE = "_".join(filename_parts) + ".txt"
-
-# Kizárt könyvtárak
+# --- Szűrési Szabályok ---
+# Könyvtárak, amiket a bejárás során teljesen figyelmen kívül hagyunk.
 EXCLUDED_DIRS = {
     # Generated
     "node_modules", "dist", "coverage", "target", "build", ".git", ".idea", ".vscode", ".gradle", ".mvn", "__pycache__",
@@ -74,60 +86,78 @@ ALLOWED_EXTENSIONS = {
 }
 
 
-def process_file_content(content):
+################################################################################
+### 2. SZKRIPT LOGIKA                                                        ###
+# Innentől kezdve általában nem szükséges módosítani.                       #
+################################################################################
+
+def generate_output_filename(project_dirs, base_path, keywords):
     """
-    Ez a függvény végzi a forráskód "karcsúsítását" az LLM számára.
-    A feldolgozás sorrendje fontos.
+    Generál egy egyedi és informatív fájlnevet a bemeneti paraméterek alapján.
     """
+    if not project_dirs:
+        return f"export_{time.strftime('%Y%m%d_%H%M%S')}.txt"
 
-    # 1. Többsoros /* ... */ kommentek törlése
-    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    primary_project_dir = project_dirs[0]
 
-    # 2. Egysoros // kommentek törlése, de a /// XML kommenteket kihagyjuk.
-    content = re.sub(r'(?<!/)//.*', '', content)
+    if base_path and base_path in primary_project_dir:
+        relative_part = primary_project_dir.replace(base_path, "")
+    else:
+        relative_part = os.path.basename(primary_project_dir)
 
-    # 3. XML doc kommentek feldolgozása
-    def xml_comment_replacer(match):
-        block = match.group(0)
-        summary_match = re.search(r'<summary>\s*(.*?)\s*</summary>', block, re.DOTALL)
-        if summary_match:
-            summary_text = ' '.join(line.strip() for line in summary_match.group(1).split('\n'))
-            indentation = re.match(r'^\s*', block).group(0) if re.match(r'^\s*', block) else ''
-            return f"{indentation}/// {summary_text}\n"
-        else:
+    folder_structure = relative_part.replace("\\", "_").replace("/", "_").lower()
+
+    filename_parts = [folder_structure]
+    if keywords:
+        sanitized_keywords = [re.sub(r'[\W_]+', '', k).lower() for k in keywords if k]
+        if sanitized_keywords:
+            keywords_str = "+".join(sanitized_keywords)
+            filename_parts.append(keywords_str)
+
+    filename_parts.append(time.strftime("%Y%m%d_%H%M%S"))
+    return "_".join(part for part in filename_parts if part) + ".txt"
+
+
+# A kimeneti fájlnév meghatározása a konfiguráció alapján
+OUTPUT_FILE = generate_output_filename(PROJECT_DIRS, BASE_PATH_FOR_RELPATH, PATH_KEYWORDS)
+
+
+def process_file_content(content, options, filepath):
+    """
+    A fájl tartalmát "karcsúsítja" a konfigurálható opciók alapján.
+    """
+    if filepath.endswith(('.html', '.xml', '.csv')):
+        return content
+
+    if options.get("remove_multiline_comments"):
+        content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    if options.get("remove_singleline_comments"):
+        content = re.sub(r'(?<!/)//.*', '', content)
+    if options.get("summarize_xml_doc_comments"):
+        def xml_comment_replacer(match):
+            block = match.group(0)
+            summary_match = re.search(r'<summary>\s*(.*?)\s*</summary>', block, re.DOTALL)
+            if summary_match:
+                summary_text = ' '.join(line.strip() for line in summary_match.group(1).split('\n'))
+                indentation = re.match(r'^\s*', block).group(0) if re.match(r'^\s*', block) else ''
+                return f"{indentation}/// {summary_text}\n"
             return ''
 
-    content = re.sub(r'(^\s*///.*$\n?)+', xml_comment_replacer, content, flags=re.MULTILINE)
+        content = re.sub(r'(^\s*///.*$\n?)+', xml_comment_replacer, content, flags=re.MULTILINE)
+    if options.get("remove_debug_blocks"):
+        content = re.sub(r'#if DEBUG.*?#endif', '', content, flags=re.DOTALL | re.MULTILINE)
+    if options.get("remove_namespace_declarations"):
+        def namespace_replacer(match): return textwrap.dedent(match.group(1))
 
-    # 4. #if DEBUG ... #endif blokkok törlése
-    content = re.sub(r'#if DEBUG.*?#endif', '', content, flags=re.DOTALL | re.MULTILINE)
-
-    # 5. Namespace deklarációk eltávolítása (C#)
-    # Kezeli az opcionális BOM (\ufeff) karaktert is a sor elején.
-    # Először a blokk-hatókörű (namespace { ... }) névtereket kezeljük
-    def namespace_replacer(match):
-        # A regex a névtéren belüli teljes tartalmat capture-öli az 1. csoportba.
-        inner_content = match.group(1)
-        # A textwrap.dedent eltávolítja a közös behúzást a blokk minden sorából.
-        return textwrap.dedent(inner_content)
-
-    # Ez a regex megkeresi a 'namespace ... {' ... '}' blokkot.
-    # [\s\S]*? : Bármilyen karakter (beleértve a sortöréseket is), nem mohó módon.
-    # A re.DOTALL miatt a '.' is illeszkedik a sortörésekre.
-    content = re.sub(r'^\s*\ufeff?\s*namespace\s+[\w\.]+\s*\{([\s\S]*)\}\s*$', namespace_replacer, content,
-                     flags=re.MULTILINE)
-
-    content = re.sub(r'^\s*\ufeff?\s*namespace .*;\s*$\n?', '', content, flags=re.MULTILINE)
-
-    # 6. `using` direktívák törlése (C#)
-    # A biztonság kedvéért itt is kezeljük az opcionális BOM-ot, hátha using van a fájl elején.
-    content = re.sub(r'^\s*\ufeff?\s*using .*;\s*$\n?', '', content, flags=re.MULTILINE)
-
-    # 7. `import` direktívák törlése (TypeScript/JavaScript)
-    content = re.sub(r'^\s*import[\s\S]+?from[\s\S]+?[;]?\s*$', '', content, flags=re.MULTILINE)
-
-    # 8. Több egymást követő üres sor cseréje egyetlen üres sorra
-    content = re.sub(r'\n\s*\n+', '\n\n', content)
+        content = re.sub(r'^\s*\ufeff?\s*namespace\s+[\w\.]+\s*\{([\s\S]*)\}\s*$', namespace_replacer, content,
+                         flags=re.MULTILINE)
+        content = re.sub(r'^\s*\ufeff?\s*namespace .*;\s*$\n?', '', content, flags=re.MULTILINE)
+    if options.get("remove_using_statements"):
+        content = re.sub(r'^\s*\ufeff?\s*using .*;\s*$\n?', '', content, flags=re.MULTILINE)
+    if options.get("remove_import_statements"):
+        content = re.sub(r'^\s*import[\s\S]+?from[\s\S]+?[;]?\s*$', '', content, flags=re.MULTILINE)
+    if options.get("collapse_multiple_empty_lines"):
+        content = re.sub(r'\n\s*\n+', '\n\n', content)
 
     return content.strip()
 
@@ -136,68 +166,69 @@ def is_excluded_file(filename):
     return any(fnmatch.fnmatch(filename, pattern) for pattern in EXCLUDED_PATTERNS)
 
 
-def is_text_file(filename):
-    return any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS)
+def is_allowed_file(filepath):
+    filename = os.path.basename(filepath)
+    if not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+        return False
+    if is_excluded_file(filename):
+        return False
+    if PATH_KEYWORDS and not any(keyword.lower() in filepath.lower() for keyword in PATH_KEYWORDS):
+        return False
+    return True
 
 
 def collect_source_files(root_dir):
-    """
-    Kibővítve a PATH_KEYWORDS változó szerinti szűréssel.
-    """
     collected_files = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        # Könyvtárak kizárása a bejárásból a gyorsaság érdekében
         dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in EXCLUDED_DIRS]
-
         for filename in filenames:
-            # Fájlnév és minta alapján történő kizárás
-            if is_excluded_file(filename):
-                continue
-
             filepath = os.path.join(dirpath, filename)
-
-            # --- ÚJ SZŰRÉSI LOGIKA ---
-            # Ha a PATH_KEYWORDS lista definiálva van és nem üres, akkor ellenőrizzük a path-t.
-            if PATH_KEYWORDS:
-                # Kis- és nagybetű érzéketlen ellenőrzés, hogy a path tartalmazza-e bármelyik kulcsszót.
-                if not any(keyword.lower() in filepath.lower() for keyword in PATH_KEYWORDS):
-                    continue  # Ha egyik kulcsszó sem található meg a path-ban, kihagyjuk a fájlt.
-
-            # Kiterjesztés ellenőrzése
-            if is_text_file(filename):
+            if is_allowed_file(filepath):
                 collected_files.append(filepath)
-
     return collected_files
 
 
-def write_combined_file(files, output_path):
+def write_combined_file(files, output_path, base_path):
     with open(output_path, "w", encoding="utf-8") as out:
         for filepath in files:
-            rel_path = os.path.relpath(filepath, PROJECT_DIR)
+            try:
+                rel_path = os.path.relpath(filepath, base_path)
+            except ValueError:
+                rel_path = filepath
             out.write(f"\n\n--- FILE: {rel_path} ---\n\n")
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, "r", encoding="utf-8", errors='ignore') as f:
                     original_content = f.read()
-                    processed_content = process_file_content(original_content)
+                    processed_content = process_file_content(original_content, PROCESSING_OPTIONS, filepath)
                     out.write(processed_content)
             except Exception as e:
                 out.write(f"[HIBA: Nem sikerült beolvasni ezt a fájlt: {e}]\n")
 
 
 def main():
-    print(f"🔍 Projekt bejárása: {PROJECT_DIR}")
+    all_files = []
+    print("🚀 Szkript indítása a következő beállításokkal:")
+    print(f"  Kimeneti fájl: {OUTPUT_FILE}")
+    print(f"  Bejárandó könyvtárak: {len(PROJECT_DIRS)} db")
     if PATH_KEYWORDS:
-        print(f"⚡ Aktív útvonal szűrő! Kulcsszavak: {', '.join(PATH_KEYWORDS)}")
+        print(f"  Aktív útvonal szűrő! Kulcsszavak: {', '.join(PATH_KEYWORDS)}")
 
-    source_files = collect_source_files(PROJECT_DIR)
+    for project_dir in PROJECT_DIRS:
+        print(f"\n🔍 Könyvtár bejárása: {project_dir}")
+        source_files = collect_source_files(project_dir)
+        all_files.extend(source_files)
+        print(f"    -> {len(source_files)} releváns fájl hozzáadva.")
 
-    if not source_files:
-        print("❌ Nem található a szűrési feltételeknek megfelelő fájl.")
+    unique_files = sorted(list(set(all_files)))
+
+    if not unique_files:
+        print("\n❌ Nem található a szűrési feltételeknek megfelelő fájl.")
         return
 
-    print(f"✅ {len(source_files)} forrásfájl összegyűjtve. Feldolgozás és írás ide: {OUTPUT_FILE}")
-    write_combined_file(source_files, OUTPUT_FILE)
-    print("🎯 Kész! A tovább karcsúsított fájl most már feltölthető az LLM-nek!")
+    print(f"\n✅ Összesen {len(unique_files)} egyedi fájl összegyűjtve.")
+    print("✍️  Feldolgozás és írás...")
+    write_combined_file(unique_files, OUTPUT_FILE, BASE_PATH_FOR_RELPATH)
+    print("🎯 Kész! A testreszabott export fájl feltölthető az LLM-nek!")
 
 
 if __name__ == "__main__":
