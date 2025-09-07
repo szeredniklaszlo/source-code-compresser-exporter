@@ -10,10 +10,13 @@ import time
 ################################################################################
 
 # --- Alapbeállítások ---
-# Add meg azokat a gyökérkönyvtárakat, amiket a szkriptnek be kell járnia.
-PROJECT_DIRS = [
-    "S:\\Programozas\\Egyeb\\Munkahely\\kep-sc\\Source\\JavaServer",
-    "S:\\Programozas\\Egyeb\\Munkahely\\kep-sc\\Source\\JavaServer\\reporting\\target\\site\\jacoco",
+# Add meg azokat a gyökérkönyvtárakat VAGY konkrét fájlokat,
+# amiket a szkriptnek fel kell dolgoznia.
+PROJECT_ITEMS = [
+    r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\JavaServer\reporting\src",
+    #r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\Server\Modules\Monitoring\DB\Migrations\V1.250903.1100__add_reporting_tables_and_enums.sql",
+    # Példa egy másik egyedi fájlra:
+    # r"C:\projektem\konfiguracio\app.config"
 ]
 
 # Viszonyítási alap a relatív útvonalakhoz és a kimeneti fájlnévhez.
@@ -69,7 +72,7 @@ EXCLUDED_PATTERNS = [
 # Csak ezekkel a kiterjesztésekkel engedélyezünk fájlokat
 ALLOWED_EXTENSIONS = {
     # Webfejlesztési fájlok
-    ".ts", ".tsx", ".js", ".html",
+    ".ts", ".tsx", ".js", ".html", ".sql",
     # ".scss", ".css",
 
     # Java specifikus (meghagyva az eredetiből)
@@ -91,35 +94,37 @@ ALLOWED_EXTENSIONS = {
 # Innentől kezdve általában nem szükséges módosítani.                       #
 ################################################################################
 
-def generate_output_filename(project_dirs, base_path, keywords):
+def generate_output_components(project_items, base_path, keywords):
     """
-    Generál egy egyedi és informatív fájlnevet a bemeneti paraméterek alapján.
+    Legenerálja a kimeneti fájlnév és útvonal központi elemeit a bemeneti
+    paraméterek alapján.
+    Visszatérési érték: (alap_név, időbélyeg_str)
     """
-    if not project_dirs:
-        return f"export_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    base_name = "export"
+    if project_items:
+        primary_project_item = project_items[0]
 
-    primary_project_dir = project_dirs[0]
+        if base_path and base_path in primary_project_item:
+            relative_part = primary_project_item.replace(base_path, "")
+        else:
+            relative_part = os.path.basename(primary_project_item)
 
-    if base_path and base_path in primary_project_dir:
-        relative_part = primary_project_dir.replace(base_path, "")
-    else:
-        relative_part = os.path.basename(primary_project_dir)
+        if os.path.isfile(primary_project_item):
+            relative_part, _ = os.path.splitext(relative_part)
 
-    folder_structure = relative_part.replace("\\", "_").replace("/", "_").lower()
+        folder_structure = relative_part.replace("\\", "_").replace("/", "_").lower()
 
-    filename_parts = [folder_structure]
-    if keywords:
-        sanitized_keywords = [re.sub(r'[\W_]+', '', k).lower() for k in keywords if k]
-        if sanitized_keywords:
-            keywords_str = "+".join(sanitized_keywords)
-            filename_parts.append(keywords_str)
+        base_name_parts = [folder_structure]
+        if keywords:
+            sanitized_keywords = [re.sub(r'[\W_]+', '', k).lower() for k in keywords if k]
+            if sanitized_keywords:
+                keywords_str = "+".join(sanitized_keywords)
+                base_name_parts.append(keywords_str)
 
-    filename_parts.append(time.strftime("%Y%m%d_%H%M%S"))
-    return "_".join(part for part in filename_parts if part) + ".txt"
+        base_name = "_".join(part for part in base_name_parts if part)
 
-
-# A kimeneti fájlnév meghatározása a konfiguráció alapján
-OUTPUT_FILE = generate_output_filename(PROJECT_DIRS, BASE_PATH_FOR_RELPATH, PATH_KEYWORDS)
+    timestamp_str = time.strftime("%Y%m%d_%H%M%S")
+    return base_name, timestamp_str
 
 
 def process_file_content(content, options, filepath):
@@ -163,21 +168,31 @@ def process_file_content(content, options, filepath):
 
 
 def is_excluded_file(filename):
+    """Ellenőrzi, hogy egy fájlnév szerepel-e a kizárási listán."""
     return any(fnmatch.fnmatch(filename, pattern) for pattern in EXCLUDED_PATTERNS)
 
 
 def is_allowed_file(filepath):
+    """
+    Eldönti, hogy egy adott fájl megfelel-e a feldolgozási feltételeknek
+    (kiterjesztés, kizárások, kulcsszavak).
+    """
     filename = os.path.basename(filepath)
-    if not any(filename.endswith(ext) for ext in ALLOWED_EXTENSIONS):
+    # Ellenőrizzük, hogy a fájl kiterjesztése szerepel-e az engedélyezettek között.
+    _, ext = os.path.splitext(filename)
+    if not ext or ext.lower() not in ALLOWED_EXTENSIONS:
         return False
+    # Ellenőrizzük, hogy a fájlnév nincs-e a kizárt minták között.
     if is_excluded_file(filename):
         return False
+    # Ha vannak útvonal kulcsszavak, ellenőrizzük, hogy az útvonal tartalmazza-e valamelyiket.
     if PATH_KEYWORDS and not any(keyword.lower() in filepath.lower() for keyword in PATH_KEYWORDS):
         return False
     return True
 
 
 def collect_source_files(root_dir):
+    """Rekurzívan összegyűjti a releváns fájlokat egy könyvtárból."""
     collected_files = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
         dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in EXCLUDED_DIRS]
@@ -189,6 +204,7 @@ def collect_source_files(root_dir):
 
 
 def write_combined_file(files, output_path, base_path):
+    """A megadott fájlok tartalmát egyetlen kimeneti fájlba írja."""
     with open(output_path, "w", encoding="utf-8") as out:
         for filepath in files:
             try:
@@ -206,19 +222,51 @@ def write_combined_file(files, output_path, base_path):
 
 
 def main():
+    """A szkript fő belépési pontja."""
+    # --- Fájlnév és kimeneti útvonal generálása ---
+    base_name, timestamp_str = generate_output_components(PROJECT_ITEMS, BASE_PATH_FOR_RELPATH, PATH_KEYWORDS)
+
+    # Dátum mappa (YYYYMMDD) és al-mappa nevének meghatározása
+    date_folder = timestamp_str.split('_')[0]
+    sub_folder = base_name
+
+    # Teljes kimeneti útvonal és fájlnév összeállítása
+    output_directory = os.path.join(date_folder, sub_folder)
+    final_filename = f"{base_name}_{timestamp_str}.txt"
+    output_file_path = os.path.join(output_directory, final_filename)
+
+    # A szükséges mappastruktúra létrehozása (ha még nem létezik)
+    os.makedirs(output_directory, exist_ok=True)
+
+
     all_files = []
     print("🚀 Szkript indítása a következő beállításokkal:")
-    print(f"  Kimeneti fájl: {OUTPUT_FILE}")
-    print(f"  Bejárandó könyvtárak: {len(PROJECT_DIRS)} db")
+    print(f"  Kimeneti fájl: {output_file_path}")
+    print(f"  Feldolgozandó elemek (fájlok/könyvtárak): {len(PROJECT_ITEMS)} db")
     if PATH_KEYWORDS:
         print(f"  Aktív útvonal szűrő! Kulcsszavak: {', '.join(PATH_KEYWORDS)}")
 
-    for project_dir in PROJECT_DIRS:
-        print(f"\n🔍 Könyvtár bejárása: {project_dir}")
-        source_files = collect_source_files(project_dir)
-        all_files.extend(source_files)
-        print(f"    -> {len(source_files)} releváns fájl hozzáadva.")
+    # Végigmegyünk a feldolgozandó elemeken.
+    for path_item in PROJECT_ITEMS:
+        # Ha az elem egy létező könyvtár...
+        if os.path.isdir(path_item):
+            print(f"\n🔍 Könyvtár bejárása: {path_item}")
+            source_files = collect_source_files(path_item)
+            all_files.extend(source_files)
+            print(f"    -> {len(source_files)} releváns fájl hozzáadva.")
+        # Ha az elem egy létező fájl...
+        elif os.path.isfile(path_item):
+            print(f"\n➕ Egyedi fájl vizsgálata: {path_item}")
+            if is_allowed_file(path_item):
+                all_files.append(path_item)
+                print("    -> Fájl hozzáadva.")
+            else:
+                print("    -> Fájl kihagyva (nem felelt meg a szűrési feltételeknek).")
+        # Ha az elem se nem fájl, se nem könyvtár (vagy nem létezik).
+        else:
+            print(f"\n⚠️ Figyelmeztetés: Az útvonal nem létezik vagy nem érvényes: {path_item}")
 
+    # Kiszűrjük az esetleges duplikátumokat és sorba rendezzük a fájlokat.
     unique_files = sorted(list(set(all_files)))
 
     if not unique_files:
@@ -226,9 +274,9 @@ def main():
         return
 
     print(f"\n✅ Összesen {len(unique_files)} egyedi fájl összegyűjtve.")
-    print("✍️  Feldolgozás és írás...")
-    write_combined_file(unique_files, OUTPUT_FILE, BASE_PATH_FOR_RELPATH)
-    print("🎯 Kész! A testreszabott export fájl feltölthető az LLM-nek!")
+    print("✍️  Feldolgozás és írás a kimeneti fájlba...")
+    write_combined_file(unique_files, output_file_path, BASE_PATH_FOR_RELPATH)
+    print(f"🎯 Kész! Az exportált fájl elérhető itt: {output_file_path}")
 
 
 if __name__ == "__main__":
