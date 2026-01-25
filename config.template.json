@@ -1,0 +1,72 @@
+{
+  "_comment": "This is a configuration template for the project_concat.py script. Copy this file to 'my_config.json' and edit it to your needs.",
+
+  "project_items": [
+    "P:\\Programming\\Python\\CodeCompresser"
+  ],
+
+  "base_path_for_relpath": "P:\\Programming\\Python\\CodeCompresser",
+
+  "path_keywords": [],
+
+  "processing_options": {
+    "remove_multiline_comments": true,
+    "remove_singleline_comments": true,
+    "summarize_xml_doc_comments": true,
+    "remove_debug_blocks": true,
+    "remove_namespace_declarations": true,
+    "remove_using_statements": true,
+    "remove_import_statements": true,
+    "collapse_multiple_empty_lines": true
+  },
+
+  "excluded_dirs": [
+    "node_modules", "dist", "coverage", "target", "build", ".git", ".idea", ".vscode", ".gradle", ".mvn", "__pycache__",
+    "bin", "obj", ".vs", ".nuke"
+  ],
+
+  "excluded_patterns": [
+    "package-lock.json", "*.class", "*.iml", "*.log", "*.jar", "*.war", "*.txt"
+  ],
+
+  "allowed_extensions": {
+    "python": {
+      ".py": true
+    },
+    "web": {
+      ".html": true,
+      ".css": false,
+      ".scss": false,
+      ".js": true,
+      ".ts": true,
+      ".tsx": true
+    },
+    "csharp": {
+      ".cs": true,
+      ".csproj": true,
+      ".sln": true,
+      ".cshtml": true,
+      ".razor": true,
+      ".config": true
+    },
+    "java_and_android": {
+      ".java": true,
+      ".kt": true,
+      ".gradle": true,
+      ".xml": true,
+      ".properties": true
+    },
+    "database": {
+      ".sql": true
+    },
+    "infrastructure_and_config": {
+      ".yml": true,
+      ".yaml": true,
+      ".json": true,
+      ".md": true,
+      ".env": true,
+      ".sh": true,
+      "dockerfile": true
+    }
+  }
+}

@@ -3,106 +3,84 @@ import fnmatch
 import re
 import textwrap
 import time
+import json
+import argparse
 
 ################################################################################
-### 1. KONFIGURÁCIÓS SZEKCIÓ                                                 ###
-# Minden, amit módosítanod kell, ezen a területen található.                #
+### 1. SCRIPT LOGIC                                                          ###
+# The core logic of the script resides here. It's designed to be generic     #
+# and driven by the external configuration file.                             #
 ################################################################################
 
-# --- Alapbeállítások ---
-# Add meg azokat a gyökérkönyvtárakat VAGY konkrét fájlokat,
-# amiket a szkriptnek fel kell dolgoznia.
-PROJECT_ITEMS = [
-    r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\JavaServer\reporting\src",
-    #r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\Server\Modules\Monitoring\DB\Migrations\V1.250903.1100__add_reporting_tables_and_enums.sql",
-    # Példa egy másik egyedi fájlra:
-    # r"C:\projektem\konfiguracio\app.config"
-]
-
-# Viszonyítási alap a relatív útvonalakhoz és a kimeneti fájlnévhez.
-# Általában a projektjeidet tartalmazó közös szülőmappa.
-BASE_PATH_FOR_RELPATH = "S:\\Programozas\\Egyeb\\Munkahely\\"
-
-# Szűrési kulcsszavak az útvonalakra. Csak azok a fájlok kerülnek be,
-# amelyek teljes útvonala tartalmazza valamelyik kulcsszót.
-# Hagyd üresen ([]) a szűrés kikapcsolásához.
-PATH_KEYWORDS = []  # pl. ["service", "controller"]
-
-# --- Feldolgozási Opciók ---
-# Itt szabályozhatod, hogy a szkript melyik "karcsúsító" lépést hajtsa végre.
-# Állítsd 'False'-ra, ha egy lépést ki akarsz hagyni.
-# A .html, .xml, .csv fájlokat a szkript automatikusan érintetlenül hagyja.
-PROCESSING_OPTIONS = {
-    "remove_multiline_comments": True,  # Eltávolítja a /* ... */ kommenteket
-    "remove_singleline_comments": True,  # Eltávolítja a // kommenteket (a /// XML doksit nem)
-    "summarize_xml_doc_comments": True,  # A /// kommenteket egy soros összefoglalóvá alakítja
-    "remove_debug_blocks": True,  # Eltávolítja a #if DEBUG ... #endif blokkokat (C#)
-    "remove_namespace_declarations": True,  # Eltávolítja a 'namespace ...' sorokat/blokkokat (C#)
-    "remove_using_statements": True,  # Eltávolítja a 'using ...;' sorokat (C#)
-    "remove_import_statements": True,  # Eltávolítja az 'import ...' sorokat (JS/TS)
-    "collapse_multiple_empty_lines": True,  # Több üres sort egyre cserél
-}
-
-# --- Szűrési Szabályok ---
-# Könyvtárak, amiket a bejárás során teljesen figyelmen kívül hagyunk.
-EXCLUDED_DIRS = {
-    # Generated
-    "node_modules", "dist", "coverage", "target", "build", ".git", ".idea", ".vscode", ".gradle", ".mvn", "__pycache__",
-    "bin", "obj", ".vs", ".nuke",  # .NET specifikus kizárások
-
-    # Ignored real code
-    # "Test", "Tests", "UnitTest", "UnitTests", "E2ETests",
-    # "Common.Logic", "Common.Logic.UnitTests", "Common.Pdf", "Common.UnitTest",
-    # "ClientApp", "helm", "Docker", "Appsetting.Development",
-}
-
-# Kizárt fájlnevek vagy minták
-EXCLUDED_PATTERNS = [
-    # Generated
-    "package-lock.json", "*.class", "*.iml", "*.log", "*.jar", "*.war",
-
-    # Ignored real code
-    # "*.user", "*.suo", "*.md",
-    # "*.Test.csproj", "*.UnitTest.csproj", "*.Tests.csproj", "*.csproj", "*.sln", "*.spec.ts",
-    # "*.json", "*.yaml", "*.yml", ".env", ".gitignore", ".gitattributes",
-    # "*.cmd", "*.sh", "*.bat", "*.ps1", "*.sql",
-    # "I*.cs",
-]
-
-# Csak ezekkel a kiterjesztésekkel engedélyezünk fájlokat
-ALLOWED_EXTENSIONS = {
-    # Webfejlesztési fájlok
-    ".ts", ".tsx", ".js", ".html", ".sql",
-    # ".scss", ".css",
-
-    # Java specifikus (meghagyva az eredetiből)
-    ".java", ".xml", ".properties",
-
-    # .NET és C# specifikus kiterjesztések
-    ".cs", ".csproj", ".sln", ".cshtml", ".razor", ".config",
-
-    # Konfiguráció és dokumentáció
-    ".yml", ".yaml", ".md", ".txt", ".env", ".sh",
-
-    # Adatok
-    ".json",
-}
+def parse_arguments():
+    """Parses command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description="A tool to concatenate and process source code files into a single output file.",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "-c", "--config",
+        required=True,
+        help="Path to the JSON configuration file."
+    )
+    parser.add_argument(
+        "-o", "--output_dir",
+        required=False,
+        help="(Optional) Override the output directory. If not provided, a directory is generated based on the date and config."
+    )
+    parser.add_argument(
+        "-s", "--silent",
+        action="store_true",
+        help="(Optional) Suppress non-error console output."
+    )
+    return parser.parse_args()
 
 
-################################################################################
-### 2. SZKRIPT LOGIKA                                                        ###
-# Innentől kezdve általában nem szükséges módosítani.                       #
-################################################################################
+def load_config(config_path):
+    """Loads and validates the JSON configuration file."""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Configuration file not found at: {config_path}")
 
-def generate_output_components(project_items, base_path, keywords):
+    with open(config_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    # --- Validate required keys ---
+    required_keys = [
+        "project_items", "base_path_for_relpath", "processing_options",
+        "excluded_dirs", "excluded_patterns", "allowed_extensions"
+    ]
+    for key in required_keys:
+        if key not in config:
+            raise KeyError(f"Missing required key in config file: '{key}'")
+
+    # --- Convert list to set for efficient lookup ---
+    config["excluded_dirs"] = set(config["excluded_dirs"])
+
+    # --- Process allowed_extensions: flatten if grouped by language ---
+    extensions_config = config.get("allowed_extensions", {})
+    # Check if the first value is a dictionary to determine if it's grouped
+    if extensions_config and isinstance(next(iter(extensions_config.values()), None), dict):
+        flattened_extensions = {}
+        for lang_group in extensions_config.values():
+            if isinstance(lang_group, dict):
+                flattened_extensions.update(lang_group)
+        config['allowed_extensions'] = flattened_extensions
+    # If not grouped, it's already a flat dictionary, so no change needed.
+
+    return config
+
+
+def generate_output_components(config):
     """
-    Legenerálja a kimeneti fájlnév és útvonal központi elemeit a bemeneti
-    paraméterek alapján.
-    Visszatérési érték: (alap_név, időbélyeg_str)
+    Generates the central components for the output filename and path
+    based on the input parameters.
+    Returns: (base_name, timestamp_str)
     """
     base_name = "export"
+    project_items = config.get("project_items", [])
     if project_items:
         primary_project_item = project_items[0]
+        base_path = config.get("base_path_for_relpath")
 
         if base_path and base_path in primary_project_item:
             relative_part = primary_project_item.replace(base_path, "")
@@ -112,9 +90,10 @@ def generate_output_components(project_items, base_path, keywords):
         if os.path.isfile(primary_project_item):
             relative_part, _ = os.path.splitext(relative_part)
 
-        folder_structure = relative_part.replace("\\", "_").replace("/", "_").lower()
+        folder_structure = relative_part.replace("\\", "_").replace("/", "_").strip("_").lower()
 
         base_name_parts = [folder_structure]
+        keywords = config.get("path_keywords", [])
         if keywords:
             sanitized_keywords = [re.sub(r'[\W_]+', '', k).lower() for k in keywords if k]
             if sanitized_keywords:
@@ -127,11 +106,13 @@ def generate_output_components(project_items, base_path, keywords):
     return base_name, timestamp_str
 
 
-def process_file_content(content, options, filepath):
+def process_file_content(content, filepath, config):
     """
-    A fájl tartalmát "karcsúsítja" a konfigurálható opciók alapján.
+    "Slims down" the file content based on the configurable options.
     """
-    if filepath.endswith(('.html', '.xml', '.csv')):
+    options = config.get("processing_options", {})
+    # Untouched files
+    if filepath.endswith((('.html', '.xml', '.csv'))):
         return content
 
     if options.get("remove_multiline_comments"):
@@ -147,18 +128,15 @@ def process_file_content(content, options, filepath):
                 indentation = re.match(r'^\s*', block).group(0) if re.match(r'^\s*', block) else ''
                 return f"{indentation}/// {summary_text}\n"
             return ''
-
         content = re.sub(r'(^\s*///.*$\n?)+', xml_comment_replacer, content, flags=re.MULTILINE)
     if options.get("remove_debug_blocks"):
         content = re.sub(r'#if DEBUG.*?#endif', '', content, flags=re.DOTALL | re.MULTILINE)
     if options.get("remove_namespace_declarations"):
         def namespace_replacer(match): return textwrap.dedent(match.group(1))
-
-        content = re.sub(r'^\s*\ufeff?\s*namespace\s+[\w\.]+\s*\{([\s\S]*)\}\s*$', namespace_replacer, content,
-                         flags=re.MULTILINE)
-        content = re.sub(r'^\s*\ufeff?\s*namespace .*;\s*$\n?', '', content, flags=re.MULTILINE)
+        content = re.sub(r'^\s*\ufeff?\s*namespace\s+[\w\.]+\s*\{([\s\S]*)\}\s*$', namespace_replacer, content, flags=re.MULTILINE)
+        content = re.sub(r'^\s*\ufeff?\s*namespace .*?;\s*$\n?', '', content, flags=re.MULTILINE)
     if options.get("remove_using_statements"):
-        content = re.sub(r'^\s*\ufeff?\s*using .*;\s*$\n?', '', content, flags=re.MULTILINE)
+        content = re.sub(r'^\s*\ufeff?\s*using .*?;\s*$\n?', '', content, flags=re.MULTILINE)
     if options.get("remove_import_statements"):
         content = re.sub(r'^\s*import[\s\S]+?from[\s\S]+?[;]?\s*$', '', content, flags=re.MULTILINE)
     if options.get("collapse_multiple_empty_lines"):
@@ -167,116 +145,140 @@ def process_file_content(content, options, filepath):
     return content.strip()
 
 
-def is_excluded_file(filename):
-    """Ellenőrzi, hogy egy fájlnév szerepel-e a kizárási listán."""
-    return any(fnmatch.fnmatch(filename, pattern) for pattern in EXCLUDED_PATTERNS)
-
-
-def is_allowed_file(filepath):
+def is_allowed_file(filepath, config):
     """
-    Eldönti, hogy egy adott fájl megfelel-e a feldolgozási feltételeknek
-    (kiterjesztés, kizárások, kulcsszavak).
+    Decides if a given file meets the processing criteria
+    (extension, exclusions, keywords).
     """
     filename = os.path.basename(filepath)
-    # Ellenőrizzük, hogy a fájl kiterjesztése szerepel-e az engedélyezettek között.
     _, ext = os.path.splitext(filename)
-    if not ext or ext.lower() not in ALLOWED_EXTENSIONS:
+
+    allowed_ext_map = config.get("allowed_extensions", {})
+    # Check if the extension is explicitly enabled in the config map
+    if not allowed_ext_map.get(ext.lower()):
         return False
-    # Ellenőrizzük, hogy a fájlnév nincs-e a kizárt minták között.
-    if is_excluded_file(filename):
+
+    # Check if the filename is in the excluded patterns
+    if any(fnmatch.fnmatch(filename, pattern) for pattern in config.get("excluded_patterns", [])):
         return False
-    # Ha vannak útvonal kulcsszavak, ellenőrizzük, hogy az útvonal tartalmazza-e valamelyiket.
-    if PATH_KEYWORDS and not any(keyword.lower() in filepath.lower() for keyword in PATH_KEYWORDS):
+    # If path keywords are specified, check if the path contains any of them
+    path_keywords = config.get("path_keywords", [])
+    if path_keywords and not any(keyword.lower() in filepath.lower() for keyword in path_keywords):
         return False
     return True
 
 
-def collect_source_files(root_dir):
-    """Rekurzívan összegyűjti a releváns fájlokat egy könyvtárból."""
+def collect_source_files(root_dir, config):
+    """Recursively collects relevant files from a directory."""
     collected_files = []
+    excluded_dirs = config.get("excluded_dirs", set())
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in EXCLUDED_DIRS]
+        # Filter out excluded directories in-place
+        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in excluded_dirs]
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
-            if is_allowed_file(filepath):
+            if is_allowed_file(filepath, config):
                 collected_files.append(filepath)
     return collected_files
 
 
-def write_combined_file(files, output_path, base_path):
-    """A megadott fájlok tartalmát egyetlen kimeneti fájlba írja."""
+def write_combined_file(files, output_path, config, is_silent=False):
+    """Writes the content of the specified files into a single output file."""
+    base_path = config.get("base_path_for_relpath")
     with open(output_path, "w", encoding="utf-8") as out:
         for filepath in files:
             try:
                 rel_path = os.path.relpath(filepath, base_path)
             except ValueError:
-                rel_path = filepath
-            out.write(f"\n\n--- FILE: {rel_path} ---\n\n")
+                rel_path = filepath  # Fallback if relpath fails (e.g., different drives on Windows)
+            out.write(f"\n\n--- FILE: {rel_path} ---\n")
             try:
                 with open(filepath, "r", encoding="utf-8", errors='ignore') as f:
                     original_content = f.read()
-                    processed_content = process_file_content(original_content, PROCESSING_OPTIONS, filepath)
+                    processed_content = process_file_content(original_content, filepath, config)
                     out.write(processed_content)
             except Exception as e:
-                out.write(f"[HIBA: Nem sikerült beolvasni ezt a fájlt: {e}]\n")
+                error_message = f"[ERROR: Failed to read this file: {e}]\n"
+                out.write(error_message)
+                if not is_silent:
+                    print(f"    - {error_message.strip()}")
 
+
+################################################################################
+### 2. MAIN EXECUTION BLOCK                                                  ###
+################################################################################
 
 def main():
-    """A szkript fő belépési pontja."""
-    # --- Fájlnév és kimeneti útvonal generálása ---
-    base_name, timestamp_str = generate_output_components(PROJECT_ITEMS, BASE_PATH_FOR_RELPATH, PATH_KEYWORDS)
+    """The main entry point for the script."""
+    args = parse_arguments()
+    is_silent = args.silent
 
-    # Dátum mappa (YYYYMMDD) és al-mappa nevének meghatározása
+    try:
+        config = load_config(args.config)
+    except (FileNotFoundError, KeyError) as e:
+        print(f"❌ Configuration Error: {e}")
+        return
+
+    # --- Generate output path and filename ---
+    base_name, timestamp_str = generate_output_components(config)
     date_folder = timestamp_str.split('_')[0]
-    sub_folder = base_name
+    
+    if args.output_dir:
+        output_directory = args.output_dir
+    else:
+        sub_folder = base_name
+        output_directory = os.path.join(date_folder, sub_folder)
 
-    # Teljes kimeneti útvonal és fájlnév összeállítása
-    output_directory = os.path.join(date_folder, sub_folder)
     final_filename = f"{base_name}_{timestamp_str}.txt"
     output_file_path = os.path.join(output_directory, final_filename)
 
-    # A szükséges mappastruktúra létrehozása (ha még nem létezik)
     os.makedirs(output_directory, exist_ok=True)
 
+    if not is_silent:
+        print("🚀 Starting script with the following settings:")
+        print(f"  - Output file: {output_file_path}")
+        print(f"  - Items to process: {len(config.get('project_items', []))}")
+        if config.get("path_keywords"):
+            print(f"  - Active path keywords: {', '.join(config.get('path_keywords'))}")
 
     all_files = []
-    print("🚀 Szkript indítása a következő beállításokkal:")
-    print(f"  Kimeneti fájl: {output_file_path}")
-    print(f"  Feldolgozandó elemek (fájlok/könyvtárak): {len(PROJECT_ITEMS)} db")
-    if PATH_KEYWORDS:
-        print(f"  Aktív útvonal szűrő! Kulcsszavak: {', '.join(PATH_KEYWORDS)}")
-
-    # Végigmegyünk a feldolgozandó elemeken.
-    for path_item in PROJECT_ITEMS:
-        # Ha az elem egy létező könyvtár...
+    for path_item in config.get("project_items", []):
         if os.path.isdir(path_item):
-            print(f"\n🔍 Könyvtár bejárása: {path_item}")
-            source_files = collect_source_files(path_item)
+            if not is_silent:
+                print(f"\n🔍 Traversing directory: {path_item}")
+            source_files = collect_source_files(path_item, config)
             all_files.extend(source_files)
-            print(f"    -> {len(source_files)} releváns fájl hozzáadva.")
-        # Ha az elem egy létező fájl...
+            if not is_silent:
+                print(f"    -> {len(source_files)} relevant files added.")
         elif os.path.isfile(path_item):
-            print(f"\n➕ Egyedi fájl vizsgálata: {path_item}")
-            if is_allowed_file(path_item):
+            if not is_silent:
+                print(f"\n➕ Analyzing single file: {path_item}")
+            if is_allowed_file(path_item, config):
                 all_files.append(path_item)
-                print("    -> Fájl hozzáadva.")
+                if not is_silent:
+                    print("    -> File added.")
             else:
-                print("    -> Fájl kihagyva (nem felelt meg a szűrési feltételeknek).")
-        # Ha az elem se nem fájl, se nem könyvtár (vagy nem létezik).
+                if not is_silent:
+                    print("    -> File skipped (does not match filtering criteria).")
         else:
-            print(f"\n⚠️ Figyelmeztetés: Az útvonal nem létezik vagy nem érvényes: {path_item}")
+            if not is_silent:
+                print(f"\n⚠️ Warning: Path does not exist or is invalid: {path_item}")
 
-    # Kiszűrjük az esetleges duplikátumokat és sorba rendezzük a fájlokat.
     unique_files = sorted(list(set(all_files)))
 
     if not unique_files:
-        print("\n❌ Nem található a szűrési feltételeknek megfelelő fájl.")
+        if not is_silent:
+            print("\n❌ No files found matching the criteria.")
         return
 
-    print(f"\n✅ Összesen {len(unique_files)} egyedi fájl összegyűjtve.")
-    print("✍️  Feldolgozás és írás a kimeneti fájlba...")
-    write_combined_file(unique_files, output_file_path, BASE_PATH_FOR_RELPATH)
-    print(f"🎯 Kész! Az exportált fájl elérhető itt: {output_file_path}")
+    if not is_silent:
+        print(f"\n✅ Total of {len(unique_files)} unique files collected.")
+        print("✍️  Processing and writing to output file...")
+
+    write_combined_file(unique_files, output_file_path, config, is_silent)
+
+    if not is_silent:
+        print(f"\n🎯 Done! Exported file available at: {output_file_path}")
 
 
 if __name__ == "__main__":
