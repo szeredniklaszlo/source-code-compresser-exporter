@@ -13,10 +13,7 @@ import time
 # Add meg azokat a gyökérkönyvtárakat VAGY konkrét fájlokat,
 # amiket a szkriptnek fel kell dolgoznia.
 PROJECT_ITEMS = [
-    r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\JavaServer\reporting\src",
-    #r"S:\Programozas\Egyeb\Munkahely\kep-sc\Source\Server\Modules\Monitoring\DB\Migrations\V1.250903.1100__add_reporting_tables_and_enums.sql",
-    # Példa egy másik egyedi fájlra:
-    # r"C:\projektem\konfiguracio\app.config"
+    #r"S:\Programozas\Egyeb\MVP\rentio-core",
 ]
 
 # Viszonyítási alap a relatív útvonalakhoz és a kimeneti fájlnévhez.
@@ -33,33 +30,87 @@ PATH_KEYWORDS = []  # pl. ["service", "controller"]
 # Állítsd 'False'-ra, ha egy lépést ki akarsz hagyni.
 # A .html, .xml, .csv fájlokat a szkript automatikusan érintetlenül hagyja.
 PROCESSING_OPTIONS = {
-    "remove_multiline_comments": True,  # Eltávolítja a /* ... */ kommenteket
-    "remove_singleline_comments": True,  # Eltávolítja a // kommenteket (a /// XML doksit nem)
-    "summarize_xml_doc_comments": True,  # A /// kommenteket egy soros összefoglalóvá alakítja
-    "remove_debug_blocks": True,  # Eltávolítja a #if DEBUG ... #endif blokkokat (C#)
-    "remove_namespace_declarations": True,  # Eltávolítja a 'namespace ...' sorokat/blokkokat (C#)
-    "remove_using_statements": True,  # Eltávolítja a 'using ...;' sorokat (C#)
-    "remove_import_statements": True,  # Eltávolítja az 'import ...' sorokat (JS/TS)
-    "collapse_multiple_empty_lines": True,  # Több üres sort egyre cserél
+    "remove_multiline_comments": False,  # Eltávolítja a /* ... */ kommenteket
+    "remove_singleline_comments": False,  # Eltávolítja a // kommenteket (a /// XML doksit nem)
+    "summarize_xml_doc_comments": False,  # A /// kommenteket egy soros összefoglalóvá alakítja
+    "remove_debug_blocks": False,  # Eltávolítja a #if DEBUG ... #endif blokkokat (C#)
+    "remove_namespace_declarations": False,  # Eltávolítja a 'namespace ...' sorokat/blokkokat (C#)
+    "remove_using_statements": False,  # Eltávolítja a 'using ...;' sorokat (C#)
+    "remove_import_statements": False,  # Eltávolítja az 'import ...' sorokat (JS/TS)
+    "collapse_multiple_empty_lines": False,  # Több üres sort egyre cserél
 }
 
 # --- Szűrési Szabályok ---
-# Könyvtárak, amiket a bejárás során teljesen figyelmen kívül hagyunk.
+# Könyvtárak, amiket TELJESEN figyelmen kívül hagyunk (generált, cache, külső cuccok)
 EXCLUDED_DIRS = {
-    # Generated
-    "node_modules", "dist", "coverage", "target", "build", ".git", ".idea", ".vscode", ".gradle", ".mvn", "__pycache__",
-    "bin", "obj", ".vs", ".nuke",  # .NET specifikus kizárások
+    # Generált build és függőség mappák
+    ".next",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    "coverage",
+    ".mvn",
+
+    # Verziókezelő és fejlesztői környezet
+    ".git",
+    ".idea",
+    ".vscode",
+    ".local",
+    "__pycache__",
+    "bin",
+    "obj",
+    #".vs", ".nuke",  # .NET specifikus kizárások
+
+    # Nem fejlesztett kódok / mockuppok / logok
+    "tmp",            # Stitch design/mockup mentések és képek
+    "logs",           # Backend és teszt futási logok
+    "public",         # Next.js gyári sablon SVG ikonok
+    "ui-blueprint",   # Mockup PNG-k és html fájlok a docs alatt
 
     # Ignored real code
     # "Test", "Tests", "UnitTest", "UnitTests", "E2ETests",
     # "Common.Logic", "Common.Logic.UnitTests", "Common.Pdf", "Common.UnitTest",
     # "ClientApp", "helm", "Docker", "Appsetting.Development",
+
+    ".agents",
+    ".infrastructure",
+
+    # ÚJ: Üres AI mappa, komplett tesztmappák és a felesleges Supabase function mappa
+    ".ai",
+    "test",       # Ezzel kiesik a backend src/test (nem kell egyesével kizárni a tesztkonfigokat)
+    "tests",      # Ezzel kiesik a frontend e2e tesztmappája is
+    #"supabase",   # Ha nem kellenek a Deno edge funkciók
 }
 
-# Kizárt fájlnevek vagy minták
+# Kizárt egyedi fájlok és minták (amiket nem te írtál, vagy csak szemét)
 EXCLUDED_PATTERNS = [
-    # Generated
-    "package-lock.json", "*.class", "*.iml", "*.log", "*.jar", "*.war",
+    # Generált csomagkezelő és build cache fájlok
+    "package-lock.json",
+    "next-env.d.ts",
+    "*.tsbuildinfo",
+    "mvnw",
+    "mvnw.cmd",
+    "fajlfa.txt",
+    "admin_reports_c24.html",
+
+    # Fordítási termékek és logok
+    "*.class",
+    "*.jar",
+    "*.war",
+    "*.log",
+    "*.iml",
+    "*.pyc",
+
+    # Konfigurációs meta fájlok (általában nem releváns a forráskódhoz)
+    ".gitignore",
+    ".gitattributes",
+    ".dockerignore",
+    ".nextignore",
+
+    # Ha a tesztfájlokat IS ki akarod hagyni, vedd ki a kettőskeresztet:
+    "*.test.ts", "*.test.tsx", "*.test.js", "*.spec.ts", "*Test.java", "*IT.java",
 
     # Ignored real code
     # "*.user", "*.suo", "*.md",
@@ -67,25 +118,66 @@ EXCLUDED_PATTERNS = [
     # "*.json", "*.yaml", "*.yml", ".env", ".gitignore", ".gitattributes",
     # "*.cmd", "*.sh", "*.bat", "*.ps1", "*.sql",
     # "I*.cs",
+
+    # ÚJ: Lokális próbaszkriptek és indítók kizárása
+    "test_api.js",
+    "test_db.js",
+    "scan.ps1",
+    "find_docs.ps1",
+    "dev.ps1",
+    "release.ps1",
+
+    # ÚJ: Felesleges Next.js starter CSS és logback XML-ek
+    "page.module.css",
+    "logback*.xml",
+
+    # ÚJ: Tesztkeretrendszer-konfigurációk
+    "*playwright*.config.ts",
+    "*vitest*.config.ts",
+    "vitest.setup.ts",
+
+    # ÚJ: Felesleges típus-dömping, seed adatok és grafikai koordináták kizárása
+    "db.ts",                    # A Supabase 1100 soros PostGIS típusleírója
+    "*Seeder.java",             # A 250 soros dummy adatgeneráló (Ikea fotel stb.)
+    "legal-content.ts",         # A statikus ÁSZF és Adatvédelem szövege
+    "HomeAmbientBackground.tsx",# 150 sornyi SVG görbe-koordináta
+    "Logo.tsx",                 # SVG logó koordináták
+    "FloatingGlassShards.tsx",  # Lebegő háttér-dekoráció
 ]
 
+# Csak a valódi forráskódokat és releváns konfigurációkat engedélyezzük
 # Csak ezekkel a kiterjesztésekkel engedélyezünk fájlokat
 ALLOWED_EXTENSIONS = {
-    # Webfejlesztési fájlok
-    ".ts", ".tsx", ".js", ".html", ".sql",
-    # ".scss", ".css",
+    # Java backend
+    ".java", ".xml",
+    ".properties",
 
-    # Java specifikus (meghagyva az eredetiből)
-    ".java", ".xml", ".properties",
+    # Adatbázis migrációk (Flyway - kulcsfontosságú saját kód!)
+    #".sql",
 
+    # Frontend (Next.js / TypeScript / React / Tooling)
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    #".mjs",
+    ".css",
+    ".scss",
+    ".html",
+
+    # C# & PowerShell (ha a saját .infrastructure vagy .agents szkriptek kellenek)
     # .NET és C# specifikus kiterjesztések
     ".cs", ".csproj", ".sln", ".cshtml", ".razor", ".config",
+    ".ps1",
 
     # Konfiguráció és dokumentáció
-    ".yml", ".yaml", ".md", ".txt", ".env", ".sh",
-
-    # Adatok
     ".json",
+    #".yml",
+    #".yaml",
+    "Dockerfile",
+    ".xml",
+    # TODO: remove if not needed:
+    ".md", ".txt", ".env", ".sh",
 }
 
 
@@ -169,7 +261,15 @@ def process_file_content(content, options, filepath):
 
 def is_excluded_file(filename):
     """Ellenőrzi, hogy egy fájlnév szerepel-e a kizárási listán."""
-    return any(fnmatch.fnmatch(filename, pattern) for pattern in EXCLUDED_PATTERNS)
+    for pattern in EXCLUDED_PATTERNS:
+        if fnmatch.fnmatch(filename.lower(), pattern.lower()):
+            return True
+        try:
+            if re.search(pattern, filename, re.IGNORECASE):
+                return True
+        except re.error:
+            pass
+    return False
 
 
 def is_allowed_file(filepath):
@@ -180,14 +280,20 @@ def is_allowed_file(filepath):
     filename = os.path.basename(filepath)
     # Ellenőrizzük, hogy a fájl kiterjesztése szerepel-e az engedélyezettek között.
     _, ext = os.path.splitext(filename)
-    if not ext or ext.lower() not in ALLOWED_EXTENSIONS:
+
+    # Speciális eset: Dockerfile-nak nincs külön kiterjesztése
+    if filename.lower() == "dockerfile":
+        ext = "Dockerfile"
+
+    if not ext or ext.lower() not in [e.lower() for e in ALLOWED_EXTENSIONS]:
         return False
-    # Ellenőrizzük, hogy a fájlnév nincs-e a kizárt minták között.
+
     if is_excluded_file(filename):
         return False
-    # Ha vannak útvonal kulcsszavak, ellenőrizzük, hogy az útvonal tartalmazza-e valamelyiket.
+
     if PATH_KEYWORDS and not any(keyword.lower() in filepath.lower() for keyword in PATH_KEYWORDS):
         return False
+
     return True
 
 
@@ -195,7 +301,10 @@ def collect_source_files(root_dir):
     """Rekurzívan összegyűjti a releváns fájlokat egy könyvtárból."""
     collected_files = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith('.') and d not in EXCLUDED_DIRS]
+        # Csak a tiltólistás könyvtárakat vágjuk le a bejárásból,
+        # így a hasznos ponttal kezdődő mappák (.infrastructure, .agents) megmaradnak!
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS]
+
         for filename in filenames:
             filepath = os.path.join(dirpath, filename)
             if is_allowed_file(filepath):
@@ -242,7 +351,7 @@ def main():
     all_files = []
     print("🚀 Szkript indítása a következő beállításokkal:")
     print(f"  Kimeneti fájl: {output_file_path}")
-    print(f"  Feldolgozandó elemek (fájlok/könyvtárak): {len(PROJECT_ITEMS)} db")
+    print(f"  Feldolgozandó elemek: {len(PROJECT_ITEMS)} db")
     if PATH_KEYWORDS:
         print(f"  Aktív útvonal szűrő! Kulcsszavak: {', '.join(PATH_KEYWORDS)}")
 
@@ -261,10 +370,10 @@ def main():
                 all_files.append(path_item)
                 print("    -> Fájl hozzáadva.")
             else:
-                print("    -> Fájl kihagyva (nem felelt meg a szűrési feltételeknek).")
+                print("    -> Fájl kihagyva.")
         # Ha az elem se nem fájl, se nem könyvtár (vagy nem létezik).
         else:
-            print(f"\n⚠️ Figyelmeztetés: Az útvonal nem létezik vagy nem érvényes: {path_item}")
+            print(f"\n⚠️ Az útvonal nem létezik: {path_item}")
 
     # Kiszűrjük az esetleges duplikátumokat és sorba rendezzük a fájlokat.
     unique_files = sorted(list(set(all_files)))
