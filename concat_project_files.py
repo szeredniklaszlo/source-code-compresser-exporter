@@ -264,11 +264,6 @@ def is_excluded_file(filename):
     for pattern in EXCLUDED_PATTERNS:
         if fnmatch.fnmatch(filename.lower(), pattern.lower()):
             return True
-        try:
-            if re.search(pattern, filename, re.IGNORECASE):
-                return True
-        except re.error:
-            pass
     return False
 
 
